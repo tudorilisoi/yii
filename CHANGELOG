@@ -3,7 +3,11 @@
 
 Version 1.1.11 work in progress
 -------------------------------
+<<<<<<< HEAD
+=======
+- Enh: added zii romanian(ro) translation; edited core messages to include proper romanian characters with diacritic marks (tudorilisoi)
 - Bug #82 : implemented a $countQuerySelect attribute in CdbCriteria and CBaseActiveRelation for proper counting in CActiveFinder when HAVING SQL clauses are present (tudorilisoi)
+>>>>>>> romanian_translation
 - Bug #114: CUniqueValidator and CExistValidator now respect table alias while creating db query condition (klimov-paul)
 - Bug #145: CGettextMoFile now can parse strings with no context (eagleoneraptor)
 - Bug #164: CEmailValidator.checkPort now checks the port 25 of listed MX servers (DaSourcerer)
