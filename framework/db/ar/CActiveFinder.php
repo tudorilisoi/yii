@@ -32,9 +32,9 @@ class CActiveFinder extends CComponent
 	 */
 	public $baseLimited=false;
 
-	private $_joinCount=0;
-	private $_joinTree;
-	private $_builder;
+	public $_joinCount=0;
+	public $_joinTree;
+	public $_builder;
 
 	/**
 	 * Constructor.
@@ -173,7 +173,7 @@ class CActiveFinder extends CComponent
 		$this->destroyJoinTree();
 	}
 
-	private function destroyJoinTree()
+	public function destroyJoinTree()
 	{
 		if($this->_joinTree!==null)
 			$this->_joinTree->destroy();
@@ -186,7 +186,7 @@ class CActiveFinder extends CComponent
 	 * @param mixed $with the names of the related objects relative to the parent tree node
 	 * @param array $options additional query options to be merged with the relation
 	 */
-	private function buildJoinTree($parent,$with,$options=null)
+	public function buildJoinTree($parent,$with,$options=null)
 	{
 		if($parent instanceof CStatElement)
 			throw new CDbException(Yii::t('yii','The STAT relation "{name}" cannot have child relations.',
@@ -371,8 +371,8 @@ class CJoinElement
 	 */
 	public $rawTableAlias;
 
-	private $_finder;
-	private $_builder;
+	public $_finder;
+	public $_builder;
 	private $_parent;
 	private $_pkAlias;  				// string or name=>alias
 	private $_columnAliases=array();	// name=>alias
