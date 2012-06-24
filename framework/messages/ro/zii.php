@@ -22,7 +22,7 @@ return array (
   'Home' => 'Pagina principală',
   'The button type "{type}" is not supported.' => 'Tipul de buton „{type}” nu este suportat.',
   'Are you sure you want to delete this item?' => 'Confirmaţi ştergerea acestui element?',
-  'Delete' => 'ştergere',
+  'Delete' => 'Ştergere',
   'Displaying {start}-{end} of 1 result.|Displaying {start}-{end} of {count} results.' => 'Se afişează 1 rezultat.|Se afişează {start}-{end} din {count} rezultate.',
   'Either "name" or "value" must be specified for CDataColumn.' => 'Trebuie să specificaţi "name" sau "value" pentru CDataColumn.',
   'No results found.' => 'Nu sunt rezultate pentru afişare.',
