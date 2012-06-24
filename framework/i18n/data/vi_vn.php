@@ -450,7 +450,7 @@ return array (
     'al' => 'An-ba-ni',
     'am' => 'Ác-mê-ni-a',
     'an' => 'Tây Ấn Hà Lan',
-    'ao' => 'Ăng-gô-la',
+    'ao' => 'ăng-gô-la',
     'aq' => 'Nam Cực',
     'ar' => 'Ác-hen-ti-na',
     'as' => 'Đảo Somoa thuộc Mỹ',
