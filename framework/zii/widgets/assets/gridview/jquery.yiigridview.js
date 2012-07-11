@@ -93,7 +93,10 @@
 					});
 				}
 
-				$(document).on('change.yiiGridView', inputSelector, function () {
+				$(document).on('change.yiiGridView keydown.yiiGridView', inputSelector, function (event) {
+					if (event.type == 'keydown' && event.keyCode != 13) {
+						return; // only react to enter key, not to other keys
+					}
 					var data = $(inputSelector).serialize();
 					if (settings.pageVar !== undefined) {
 						data += '&' + settings.pageVar + '=1';
@@ -323,7 +326,7 @@
 			var settings = gridSettings[this.attr('id')],
 				keys = this.find('.keys span'),
 				selection = [];
-			this.children('.' + settings.tableClass).children('tbody').children().each(function (i) {
+			this.find('.' + settings.tableClass).children('tbody').children().each(function (i) {
 				if ($(this).hasClass('selected')) {
 					selection.push(keys.eq(i).text());
 				}
