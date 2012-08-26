@@ -40,7 +40,7 @@ class YiiBase
 	private static $_logger;
 	public static function getVersion()
 	{
-		return '1.1.12';
+		return '1.1.13-dev';
 	}
 	public static function createWebApplication($config=null)
 	{
@@ -7598,6 +7598,7 @@ class CBaseActiveRelation extends CComponent
 	public $className;
 	public $foreignKey;
 	public $select='*';
+	public $countQuerySelect=null;
 	public $condition='';
 	public $params=array();
 	public $group='';
@@ -7616,6 +7617,17 @@ class CBaseActiveRelation extends CComponent
 	{
 		if($criteria instanceof CDbCriteria)
 			$criteria=$criteria->toArray();
+		if(isset($criteria['countQuerySelect']) && $this->countQuerySelect!==$criteria['countQuerySelect'])
+		{
+			if($this->countQuerySelect==='*')
+				$this->countQuerySelect=$criteria['countQuerySelect'];
+			else if($criteria['countQuerySelect']!=='*')
+			{
+				$countQuerySelect1=is_string($this->countQuerySelect)?preg_split('/\s*,\s*/',trim($this->countQuerySelect),-1,PREG_SPLIT_NO_EMPTY):$this->countQuerySelect;
+				$countQuerySelect2=is_string($criteria['countQuerySelect'])?preg_split('/\s*,\s*/',trim($criteria['countQuerySelect']),-1,PREG_SPLIT_NO_EMPTY):$criteria['countQuerySelect'];
+				$this->countQuerySelect=array_merge($countQuerySelect1,array_diff($countQuerySelect2,$countQuerySelect1));
+			}
+		}
 		if(isset($criteria['select']) && $this->select!==$criteria['select'])
 		{
 			if($this->select==='*')
