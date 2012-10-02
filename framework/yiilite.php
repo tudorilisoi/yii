@@ -417,8 +417,10 @@ class YiiBase
 		'CMssqlCommandBuilder' => '/db/schema/mssql/CMssqlCommandBuilder.php',
 		'CMssqlPdoAdapter' => '/db/schema/mssql/CMssqlPdoAdapter.php',
 		'CMssqlSchema' => '/db/schema/mssql/CMssqlSchema.php',
+		'CMssqlSqlsrvPdoAdapter' => '/db/schema/mssql/CMssqlSqlsrvPdoAdapter.php',
 		'CMssqlTableSchema' => '/db/schema/mssql/CMssqlTableSchema.php',
 		'CMysqlColumnSchema' => '/db/schema/mysql/CMysqlColumnSchema.php',
+		'CMysqlCommandBuilder' => '/db/schema/mysql/CMysqlCommandBuilder.php',
 		'CMysqlSchema' => '/db/schema/mysql/CMysqlSchema.php',
 		'CMysqlTableSchema' => '/db/schema/mysql/CMysqlTableSchema.php',
 		'COciColumnSchema' => '/db/schema/oci/COciColumnSchema.php',
@@ -442,6 +444,7 @@ class YiiBase
 		'CGettextFile' => '/i18n/gettext/CGettextFile.php',
 		'CGettextMoFile' => '/i18n/gettext/CGettextMoFile.php',
 		'CGettextPoFile' => '/i18n/gettext/CGettextPoFile.php',
+		'CChainedLogFilter' => '/logging/CChainedLogFilter.php',
 		'CDbLogRoute' => '/logging/CDbLogRoute.php',
 		'CEmailLogRoute' => '/logging/CEmailLogRoute.php',
 		'CFileLogRoute' => '/logging/CFileLogRoute.php',
@@ -1068,14 +1071,45 @@ abstract class CModule extends CComponent
 	}
 	public function setComponents($components,$merge=true)
 	{
-		foreach($components as $id=>$component)
+		foreach($components as $id=>$config)
 		{
-			if($component instanceof IApplicationComponent)
-				$this->setComponent($id,$component);
-			else if(isset($this->_componentConfig[$id]) && $merge)
-				$this->_componentConfig[$id]=CMap::mergeArray($this->_componentConfig[$id],$component);
+			if($config instanceof IApplicationComponent)
+			{
+				$this->setComponent($id,$config);
+				continue;
+			}
+			if(isset($this->_components[$id]))
+			{
+				if(isset($config['class']))
+				{
+					if(get_class($this->_components[$id])!==$config['class'])
+					{
+						unset($this->_components[$id]);
+						$this->_componentConfig[$id]=$config; //we should ignore merge here
+						continue;
+					}
+					$class=$config['class'];
+					unset($config['class']);
+					foreach($config as $key=>$value)
+						$this->_components[$id]->$key=$value;
+					$config['class']=$class;
+				}
+				else
+				{
+					foreach($config as $key=>$value)
+						$this->_components[$id]->$key=$value;
+				}
+			}
+			elseif(isset($this->_componentConfig[$id]['class'],$config['class'])
+				&& $this->_componentConfig[$id]['class']!==$config['class'])
+			{
+				$this->_componentConfig[$id]=$config; //we should ignore merge here
+				continue;
+			}
+			if(isset($this->_componentConfig[$id]) && $merge)
+				$this->_componentConfig[$id]=CMap::mergeArray($this->_componentConfig[$id],$config);
 			else
-				$this->_componentConfig[$id]=$component;
+				$this->_componentConfig[$id]=$config;
 		}
 	}
 	public function configure($config)
@@ -2032,6 +2066,7 @@ class CLogger extends CComponent
 	private $_logCount=0;
 	private $_levels;
 	private $_categories;
+	private $_except;
 	private $_timings;
 	private $_processing=false;
 	public function log($message,$level='info',$category='application')
@@ -2045,41 +2080,50 @@ class CLogger extends CComponent
 			$this->_processing=false;
 		}
 	}
-	public function getLogs($levels='',$categories='')
+	public function getLogs($levels='',$categories=array(), $except=array())
 	{
 		$this->_levels=preg_split('/[\s,]+/',strtolower($levels),-1,PREG_SPLIT_NO_EMPTY);
-		$this->_categories=preg_split('/[\s,]+/',strtolower($categories),-1,PREG_SPLIT_NO_EMPTY);
-		if(empty($levels) && empty($categories))
-			return $this->_logs;
-		else if(empty($levels))
-			return array_values(array_filter($this->_logs,array($this,'filterByCategory')));
-		else if(empty($categories))
-			return array_values(array_filter($this->_logs,array($this,'filterByLevel')));
+		if (is_string($categories))
+			$this->_categories=preg_split('/[\s,]+/',strtolower($categories),-1,PREG_SPLIT_NO_EMPTY);
 		else
-		{
-			$ret=array_filter($this->_logs,array($this,'filterByLevel'));
-			return array_values(array_filter($ret,array($this,'filterByCategory')));
-		}
+			$this->_categories=array_filter(array_map('strtolower',$categories));
+		if (is_string($except))
+			$this->_except=preg_split('/[\s,]+/',strtolower($except),-1,PREG_SPLIT_NO_EMPTY);
+		else
+			$this->_except=array_filter(array_map('strtolower',$except));
+		$ret=$this->_logs;
+		if(!empty($levels))			
+			$ret=array_values(array_filter($ret,array($this,'filterByLevel')));
+		if(!empty($this->_categories) || !empty($this->_except))
+			$ret=array_values(array_filter($ret,array($this,'filterByCategory')));
+		return $ret;
 	}
 	private function filterByCategory($value)
 	{
-		foreach($this->_categories as $category)
-		{
-			$cat=strtolower($value[2]);
-			if($cat===$category || (($c=rtrim($category,'.*'))!==$category && strpos($cat,$c)===0))
-				return true;
-		}
-		return false;
+		return $this->filterAllCategories($value, 2);
 	}
 	private function filterTimingByCategory($value)
 	{
+		return $this->filterAllCategories($value, 1);
+	}
+	private function filterAllCategories($value, $index)
+	{
+		$cat=strtolower($value[$index]);
+		$ret=empty($this->_categories);
 		foreach($this->_categories as $category)
-		{
-			$cat=strtolower($value[1]);
+		{	
 			if($cat===$category || (($c=rtrim($category,'.*'))!==$category && strpos($cat,$c)===0))
-				return true;
+				$ret=true;			
+		}		
+		if ($ret)
+		{
+			foreach($this->_except as $category)
+			{			
+				if($cat===$category || (($c=rtrim($category,'.*'))!==$category && strpos($cat,$c)===0))
+					$ret=false;
+			}
 		}
-		return false;
+		return $ret;
 	}
 	private function filterByLevel($value)
 	{
@@ -2203,8 +2247,7 @@ class CHttpRequest extends CApplicationComponent
 	private $_cookies;
 	private $_preferredLanguage;
 	private $_csrfToken;
-	private $_deleteParams;
-	private $_putParams;
+	private $_restParams;
 	public function init()
 	{
 		parent::init();
@@ -2247,26 +2290,45 @@ class CHttpRequest extends CApplicationComponent
 	{
 		if($this->getIsDeleteViaPostRequest())
 			return $this->getPost($name, $defaultValue);
-		if($this->_deleteParams===null)
-			$this->_deleteParams=$this->getIsDeleteRequest() ? $this->getRestParams() : array();
-		return isset($this->_deleteParams[$name]) ? $this->_deleteParams[$name] : $defaultValue;
+		if($this->getIsDeleteRequest())
+		{
+			$this->getRestParams();
+			return isset($this->_restParams[$name]) ? $this->_restParams[$name] : $defaultValue;
+		}
+		else
+			return $defaultValue;
 	}
 	public function getPut($name,$defaultValue=null)
 	{
 		if($this->getIsPutViaPostRequest())
 			return $this->getPost($name, $defaultValue);
-		if($this->_putParams===null)
-			$this->_putParams=$this->getIsPutRequest() ? $this->getRestParams() : array();
-		return isset($this->_putParams[$name]) ? $this->_putParams[$name] : $defaultValue;
+		if($this->getIsPutRequest())
+		{
+			$this->getRestParams();
+			return isset($this->_restParams[$name]) ? $this->_restParams[$name] : $defaultValue;
+		}
+		else
+			return $defaultValue;
 	}
 	protected function getRestParams()
 	{
-		$result=array();
-		if(function_exists('mb_parse_str'))
-			mb_parse_str(file_get_contents('php://input'), $result);
-		else
-			parse_str(file_get_contents('php://input'), $result);
-		return $result;
+		if($this->_restParams===null)
+		{
+			$result=array();
+			if(function_exists('mb_parse_str'))
+				mb_parse_str($this->getRawBody(), $result);
+			else
+				parse_str($this->getRawBody(), $result);
+			$this->_restParams=$result;
+		}
+		return $this->_restParams;
+	}
+	public function getRawBody()
+	{
+		static $rawBody;
+		if($rawBody===null)
+			$rawBody=file_get_contents('php://input');
+		return $rawBody;
 	}
 	public function getUrl()
 	{
@@ -2573,7 +2635,9 @@ class CHttpRequest extends CApplicationComponent
 		{
 			// clean up the application first because the file downloading could take long time
 			// which may cause timeout of some resources (such as DB connection)
+			ob_start();
 			Yii::app()->end(0,false);
+			ob_end_clean();
 			echo $content;
 			exit(0);
 		}
@@ -2633,19 +2697,31 @@ class CHttpRequest extends CApplicationComponent
 	}
 	public function validateCsrfToken($event)
 	{
-		if($this->getIsPostRequest())
+		if ($this->getIsPostRequest() ||
+			$this->getIsPutRequest() ||
+			$this->getIsDeleteRequest())
 		{
-			// only validate POST requests
 			$cookies=$this->getCookies();
-			if($cookies->contains($this->csrfTokenName) && isset($_POST[$this->csrfTokenName]))
+			$method=$this->getRequestType();
+			switch($method)
 			{
-				$tokenFromCookie=$cookies->itemAt($this->csrfTokenName)->value;
-				$tokenFromPost=$_POST[$this->csrfTokenName];
-				$valid=$tokenFromCookie===$tokenFromPost;
+				case 'POST':
+					$userToken=$this->getPost($this->csrfTokenName);
+				break;
+				case 'PUT':
+					$userToken=$this->getPut($this->csrfTokenName);
+				break;
+				case 'DELETE':
+					$userToken=$this->getDelete($this->csrfTokenName);
+			}
+			if (!empty($userToken) && $cookies->contains($this->csrfTokenName))
+			{
+				$cookieToken=$cookies->itemAt($this->csrfTokenName)->value;
+				$valid=$cookieToken===$userToken;
 			}
 			else
-				$valid=false;
-			if(!$valid)
+				$valid = false;
+			if (!$valid)
 				throw new CHttpException(400,Yii::t('yii','The CSRF token could not be verified.'));
 		}
 	}
@@ -3934,7 +4010,15 @@ class CWebUser extends CApplicationComponent implements IWebUser
 	}
 	public function getReturnUrl($defaultUrl=null)
 	{
-		return $this->getState('__returnUrl', $defaultUrl===null ? Yii::app()->getRequest()->getScriptUrl() : CHtml::normalizeUrl($defaultUrl));
+		if($defaultUrl===null)
+		{
+			$defaultReturnUrl=Yii::app()->getUrlManager()->showScriptName ? Yii::app()->getRequest()->getScriptUrl() : Yii::app()->getRequest()->getBaseUrl().'/';
+		}
+		else
+		{
+			$defaultReturnUrl=CHtml::normalizeUrl($defaultUrl);
+		}
+		return $this->getState('__returnUrl',$defaultReturnUrl);
 	}
 	public function setReturnUrl($value)
 	{
@@ -4191,6 +4275,9 @@ class CHttpSession extends CApplicationComponent implements IteratorAggregate,Ar
 	public function init()
 	{
 		parent::init();
+		// default session gc probability is 1%
+		ini_set('session.gc_probability',1);
+		ini_set('session.gc_divisor',100);
 		if($this->autoStart)
 			$this->open();
 		register_shutdown_function(array($this,'close'));
@@ -4310,18 +4397,18 @@ class CHttpSession extends CApplicationComponent implements IteratorAggregate,Ar
 	}
 	public function getGCProbability()
 	{
-		return (int)ini_get('session.gc_probability');
+		return (float)(ini_get('session.gc_probability')/ini_get('session.gc_divisor')*100);
 	}
 	public function setGCProbability($value)
 	{
-		$value=(int)$value;
 		if($value>=0 && $value<=100)
 		{
-			ini_set('session.gc_probability',$value);
-			ini_set('session.gc_divisor','100');
+			// percent * 21474837 / 2147483647 ≈ percent * 0.01
+			ini_set('session.gc_probability',floor($value*21474836.47));
+			ini_set('session.gc_divisor',2147483647);
 		}
 		else
-			throw new CException(Yii::t('yii','CHttpSession.gcProbability "{value}" is invalid. It must be an integer between 0 and 100.',
+			throw new CException(Yii::t('yii','CHttpSession.gcProbability "{value}" is invalid. It must be a float between 0 and 100.',
 				array('{value}'=>$value)));
 	}
 	public function getUseTransparentSessionID()
@@ -4440,6 +4527,7 @@ class CHtml
 	public static $errorSummaryCss='errorSummary';
 	public static $errorMessageCss='errorMessage';
 	public static $errorCss='error';
+	public static $errorContainerTag='div';
 	public static $requiredCss='required';
 	public static $beforeRequiredLabel='';
 	public static $afterRequiredLabel=' <span class="required">*</span>';
@@ -4551,7 +4639,12 @@ class CHtml
 			foreach(explode('&',substr($url,$pos+1)) as $pair)
 			{
 				if(($pos=strpos($pair,'='))!==false)
-					$hiddens[]=self::hiddenField(urldecode(substr($pair,0,$pos)),urldecode(substr($pair,$pos+1)),array('id'=>false));
+				{
+					if(($name=substr($pair,0,$pos))!==Yii::app()->getUrlManager()->routeVar)
+						$hiddens[]=self::hiddenField(urldecode($name),urldecode(substr($pair,$pos+1)),array('id'=>false));
+				}
+				else
+					$hiddens[]=self::hiddenField(urldecode($pair),'',array('id'=>false));
 			}
 		}
 		$request=Yii::app()->request;
@@ -4732,7 +4825,7 @@ class CHtml
 			$uncheck=null;
 		if($uncheck!==null)
 		{
-			// add a hidden field so that if the radio button is not selected, it still submits a value
+			// add a hidden field so that if the check box is not checked, it still submits a value
 			if(isset($htmlOptions['id']) && $htmlOptions['id']!==false)
 				$uncheckOptions=array('id'=>self::ID_PREFIX.$htmlOptions['id']);
 			else
@@ -4741,7 +4834,7 @@ class CHtml
 		}
 		else
 			$hidden='';
-		// add a hidden field so that if the checkbox  is not selected, it still submits a value
+		// add a hidden field so that if the check box is not checked, it still submits a value
 		return $hidden . self::inputField('checkbox',$name,$value,$htmlOptions);
 	}
 	public static function dropDownList($name,$select,$data,$htmlOptions=array())
@@ -5014,7 +5107,13 @@ EOD;
 		self::clientChange('change',$htmlOptions);
 		if($model->hasErrors($attribute))
 			self::addErrorCss($htmlOptions);
-		$text=self::resolveValue($model,$attribute);
+		if(isset($htmlOptions['value']))
+		{
+			$text=$htmlOptions['value'];
+			unset($htmlOptions['value']);
+		}
+		else
+			$text=self::resolveValue($model,$attribute);
 		return self::tag('textarea',$htmlOptions,isset($htmlOptions['encode']) && !$htmlOptions['encode'] ? $text : self::encode($text));
 	}
 	public static function activeFileField($model,$attribute,$htmlOptions=array())
@@ -5168,7 +5267,7 @@ EOD;
 		{
 			if(!isset($htmlOptions['class']))
 				$htmlOptions['class']=self::$errorMessageCss;
-			return self::tag('div',$htmlOptions,$error);
+			return self::tag(self::$errorContainerTag,$htmlOptions,$error);
 		}
 		else
 			return '';
@@ -5199,15 +5298,18 @@ EOD;
 	}
 	public static function value($model,$attribute,$defaultValue=null)
 	{
-		foreach(explode('.',$attribute) as $name)
-		{
-			if(is_object($model))
-				$model=$model->$name;
-			else if(is_array($model) && isset($model[$name]))
-				$model=$model[$name];
-			else
-				return $defaultValue;
-		}
+		if(is_string($attribute))
+			foreach(explode('.',$attribute) as $name)
+			{
+				if(is_object($model))
+					$model=$model->$name;
+				else if(is_array($model) && isset($model[$name]))
+					$model=$model[$name];
+				else
+					return $defaultValue;
+			}
+		else
+			return call_user_func($attribute,$model);
 		return $model;
 	}
 	public static function getIdByName($name)
@@ -5426,6 +5528,8 @@ EOD;
 	}
 	protected static function addErrorCss(&$htmlOptions)
 	{
+		if(empty(self::$errorCss))
+			return;
 		if(isset($htmlOptions['class']))
 			$htmlOptions['class'].=' '.self::$errorCss;
 		else
@@ -5971,7 +6075,7 @@ class CClientScript extends CApplicationComponent
 		if($httpEquiv!==null)
 			$options['http-equiv']=$httpEquiv;
 		$options['content']=$content;
-		$this->metaTags[serialize($options)]=$options;
+		$this->metaTags[]=$options;
 		$params=func_get_args();
 		$this->recordCachingAction('clientScript','registerMetaTag',$params);
 		return $this;
@@ -7956,8 +8060,10 @@ class CDbConnection extends CApplicationComponent
 		if(($pos=strpos($this->connectionString,':'))!==false)
 		{
 			$driver=strtolower(substr($this->connectionString,0,$pos));
-			if($driver==='mssql' || $driver==='dblib' || $driver==='sqlsrv')
+			if($driver==='mssql' || $driver==='dblib')
 				$pdoClass='CMssqlPdoAdapter';
+			else if($driver==='sqlsrv')
+				$pdoClass='CMssqlSqlsrvPdoAdapter';
 		}
 		return new $pdoClass($this->connectionString,$this->username,
 									$this->password,$this->_attributes);
@@ -8051,6 +8157,7 @@ class CDbConnection extends CApplicationComponent
 			'boolean'=>PDO::PARAM_BOOL,
 			'integer'=>PDO::PARAM_INT,
 			'string'=>PDO::PARAM_STR,
+			'resource'=>PDO::PARAM_LOB,
 			'NULL'=>PDO::PARAM_NULL,
 		);
 		return isset($map[$type]) ? $map[$type] : PDO::PARAM_STR;
@@ -8519,6 +8626,7 @@ class CSqliteSchema extends CDbSchema
 		$c->allowNull=!$column['notnull'];
 		$c->isPrimaryKey=$column['pk']!=0;
 		$c->isForeignKey=false;
+		$c->comment=null; // SQLite does not support column comments at all
 		$c->init(strtolower($column['type']),$column['dflt_value']);
 		return $c;
 	}
@@ -8922,6 +9030,26 @@ class CDbCommand extends CComponent
 			$this->params[$name]=$value;
 		return $this;
 	}
+	public function andWhere($conditions,$params=array())
+	{
+		if(isset($this->_query['where']))
+			$this->_query['where']=$this->processConditions(array('AND',$this->_query['where'],$conditions));
+		else
+			$this->_query['where']=$this->processConditions($conditions);
+		foreach($params as $name=>$value)
+			$this->params[$name]=$value;
+		return $this;
+	}
+	public function orWhere($conditions,$params=array())
+	{
+		if(isset($this->_query['where']))
+			$this->_query['where']=$this->processConditions(array('OR',$this->_query['where'],$conditions));
+		else
+			$this->_query['where']=$this->processConditions($conditions);
+		foreach($params as $name=>$value)
+			$this->params[$name]=$value;
+		return $this;
+	}
 	public function getWhere()
 	{
 		return isset($this->_query['where']) ? $this->_query['where'] : '';
@@ -9273,6 +9401,7 @@ class CDbColumnSchema extends CComponent
 	public $isPrimaryKey;
 	public $isForeignKey;
 	public $autoIncrement=false;
+	public $comment='';
 	public function init($dbType, $defaultValue)
 	{
 		$this->dbType=$dbType;
@@ -9326,10 +9455,9 @@ class CSqliteColumnSchema extends CDbColumnSchema
 {
 	protected function extractDefault($defaultValue)
 	{
-		if($this->type==='string') // PHP 5.2.6 adds single quotes while 5.2.0 doesn't
-			$this->defaultValue=trim($defaultValue,"'\"");
-		else
-			$this->defaultValue=$this->typecast(strcasecmp($defaultValue,'null') ? $defaultValue : null);
+		$this->defaultValue=$this->typecast(strcasecmp($defaultValue,'null') ? $defaultValue : null);
+		if($this->type==='string' && $this->defaultValue!==null) // PHP 5.2.6 adds single quotes while 5.2.0 doesn't
+			$this->defaultValue=trim($this->defaultValue,"'\"");
 	}
 }
 abstract class CValidator extends CComponent
